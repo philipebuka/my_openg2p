@@ -1,0 +1,4 @@
+repo-registry = git://develop//https://github.com/OpenG2P/openg2p-registry.git
+repo-program = git://17.0-develop//https://github.com/OpenG2P/openg2p-program.git
+repo-bridge = git://develop//https://github.com/OpenG2P/openg2p-g2p-bridge.git
+repo-spar = git://develop//https://github.com/OpenG2P/openg2p-spar.git

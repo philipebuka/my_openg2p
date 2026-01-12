@@ -1,0 +1,68 @@
+name: OpenG2P Odoo Package Dockers build
+
+on:
+  workflow_dispatch:
+    inputs:
+      packagePath:
+        description: 'Package path w.r.t packages folder'
+        required: true
+        default: ''
+        type: string
+
+jobs:
+  docker-build:
+    runs-on: ubuntu-latest
+    env:
+      OPENG2P_BOT_GITHUB_PAT: ${{ secrets.OPENG2P_BOT_GITHUB_PAT }}
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Docker Login
+        run: |
+          echo "${{ secrets.docker_hub_token }}" | docker login -u ${{ secrets.docker_hub_actor }} --password-stdin || echo "::warning::Failed to Login to dockerhub"
+
+      - name: Docker build & push
+        run: |
+          cd packaging/packages
+
+          package=${{ inputs.packagePath }}
+
+          if [ ! -f ${package} ]; then
+            echo "Could not find the package specified." 1>&2;
+            exit 1;
+          fi
+          # Pick the Docker name from the first line of the package file
+          IMAGE_ID=$(sed -n '1p' $package)
+          IMAGE_ID=${IMAGE_ID#"#!"}
+
+          # Pick the Odoo version from the second line of the package file
+          ODOO_BASE_VERSION=$(sed -n '2p' $package)
+          ODOO_BASE_VERSION=${ODOO_BASE_VERSION#"#!"}
+
+          if sed -n '3p' $package | grep -q '^#!'; then
+            MODULES_TO_REMOVE=$(sed -n '3p' $package)
+            MODULES_TO_REMOVE=${MODULES_TO_REMOVE#"#!"}
+          fi
+
+          COMMIT_HASH=$(git --no-pager log -1 --pretty=format:'%H')
+
+          cd ../
+          ./package.sh packages/${package}
+          docker build . \
+            --build-arg BASE_VERSION=${ODOO_BASE_VERSION} \
+            --build-arg MODULES_TO_REMOVE=${MODULES_TO_REMOVE} \
+            --label org.opencontainers.image.created=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
+            --label org.opencontainers.image.authors='${{ github.repository_owner }}' \
+            --label org.opencontainers.image.url="https://openg2p.org" \
+            --label org.opencontainers.image.documentation="https://docs.openg2p.org" \
+            --label org.opencontainers.image.source="${{ github.server_url }}/${{ github.repository }}/blob/${COMMIT_HASH}/packaging/packages/${package}" \
+            --label org.opencontainers.image.version=$(echo $IMAGE_ID | cut -d':' -f2) \
+            --label org.opencontainers.image.revision=${COMMIT_HASH} \
+            --label org.opencontainers.image.vendor=$(echo $IMAGE_ID | cut -d'/' -f1) \
+            --label org.opencontainers.image.licenses="LGPL-3.0-or-later" \
+            --label org.opencontainers.image.title=$(echo $IMAGE_ID | cut -d':' -f1 | cut -d'/' -f2) \
+            --label org.opencontainers.image.description="Odoo package created by ${{ github.repository_owner }}." \
+            --label org.opencontainers.image.base.name="docker.io/library/odoo:${ODOO_BASE_VERSION}" \
+            --file Dockerfile \
+            --tag $IMAGE_ID
+          docker push $IMAGE_ID
